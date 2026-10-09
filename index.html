@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sculpt</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #151518; color: #e8e8ea;
+               font: 14px system-ui, sans-serif; }
+  #app { display: grid; grid-template-columns: 1fr 1fr; height: 100dvh; }
+  @media (max-width: 820px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: 58dvh 1fr; }
+  }
+  #viewer { position: relative; overflow: hidden; touch-action: none; cursor: grab; }
+  #viewer:active { cursor: grabbing; }
+  #viewer canvas { display: block; }
+  #hint { position: absolute; left: 14px; bottom: 12px; font-size: 12px;
+          color: #8a8a92; pointer-events: none; }
+  #photos { display: flex; flex-direction: column; min-height: 0;
+            border-left: 1px solid #26262b; }
+  @media (max-width: 820px) {
+    #photos { border-left: 0; border-top: 1px solid #26262b; }
+  }
+  #main { width: 100%; flex: 1; min-height: 0; object-fit: contain;
+          background: #0e0e10; }
+  #thumbs { display: flex; gap: 8px; padding: 10px; }
+  #thumbs img { flex: 1; height: 64px; object-fit: cover; border-radius: 6px;
+                opacity: .5; cursor: pointer; border: 2px solid transparent;
+                transition: .15s; }
+  #thumbs img:hover { opacity: .85; }
+  #thumbs img.on { opacity: 1; border-color: #6ea8fe; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="viewer"><div id="hint">loading…</div></div>
+  <div id="photos">
+    <img id="main" src="assets/1.jpg" alt="">
+    <div id="thumbs"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }      from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------- photo gallery ---------- */
+const PHOTOS = ['assets/1.jpg', 'assets/2.jpg',
+                'assets/3.jpg', 'assets/4.jpg'];   // ← edit names here
+
+const mainEl   = document.getElementById('main');
+const thumbBox = document.getElementById('thumbs');
+
+PHOTOS.forEach((src, i) => {
+  const t = new Image();
+  t.src = src;
+  t.alt = '';
+  if (i === 0) t.classList.add('on');
+  t.onclick = () => {
+    mainEl.src = src;
+    [...thumbBox.children].forEach(c => c.classList.remove('on'));
+    t.classList.add('on');
+  };
+  thumbBox.appendChild(t);
+});
+
+/* ---------- 3d viewer ---------- */
+const viewer = document.getElementById('viewer');
+const hint   = document.getElementById('hint');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+viewer.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x151518);
+scene.environment = new THREE.PMREMGenerator(renderer)
+  .fromScene(new RoomEnvironment(), 0.04).texture;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x333344, 1.0));
+
+const camera = new THREE.PerspectiveCamera(
+  45, viewer.clientWidth / viewer.clientHeight, 0.1, 1000
+);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.8;
+renderer.domElement.addEventListener('pointerdown',
+  () => { controls.autoRotate = false; }, { once: true });
+
+new GLTFLoader().load('assets/model.glb', (gltf) => {
+  const model = gltf.scene;
+  scene.add(model);
+
+  // centre it, then back the camera off to fit
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  model.position.sub(center);
+
+  const d = Math.max(size.x, size.y, size.z);
+  camera.position.set(d * 1.1, d * 0.8, d * 1.5);
+  camera.near = d / 100;
+  camera.far  = d * 100;
+  camera.updateProjectionMatrix();
+  controls.target.set(0, 0, 0);
+  controls.minDistance = d * 0.4;
+  controls.maxDistance = d * 6;
+  controls.update();
+
+  hint.textContent = 'drag to rotate · scroll to zoom';
+}, undefined, () => {
+  hint.textContent = 'could not find assets/model.glb';
+});
+
+new ResizeObserver(() => {
+  const w = viewer.clientWidth, h = viewer.clientHeight;
+  if (!w || !h) return;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}).observe(viewer);
+
+renderer.setAnimationLoop(() => {
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
